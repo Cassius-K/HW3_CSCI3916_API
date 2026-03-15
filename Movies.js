@@ -11,7 +11,7 @@ const Schema = mongoose.Schema;
 //  }
 //};
 
-connectDB();
+//connectDB();
 
 // Movie schema
 const MovieSchema = new mongoose.Schema({
