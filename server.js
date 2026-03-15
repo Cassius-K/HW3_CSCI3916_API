@@ -16,64 +16,172 @@ app.use(passport.initialize());
 
 const router = express.Router();
 
-// Removed getJSONObjectForMovieRequirement as it's not used
-
-router.post('/signup', async (req, res) => { // Use async/await
-  if (!req.body.username || !req.body.password) {
-    return res.status(400).json({ success: false, msg: 'Please include both username and password to signup.' }); // 400 Bad Request
-  }
-
-  try {
-    const user = new User({ // Create user directly with the data
-      name: req.body.name,
-      username: req.body.username,
-      password: req.body.password,
-    });
-
-    await user.save(); // Use await with user.save()
-
-    res.status(201).json({ success: true, msg: 'Successfully created new user.' }); // 201 Created
-  } catch (err) {
-    if (err.code === 11000) { // Strict equality check (===)
-      return res.status(409).json({ success: false, message: 'A user with that username already exists.' }); // 409 Conflict
+router.post('/signup', function(req, res) {
+    if (!req.body.username || !req.body.password) {
+        res.json({success: false, msg: 'Please include both username and password to signup.'})
     } else {
-      console.error(err); // Log the error for debugging
-      return res.status(500).json({ success: false, message: 'Something went wrong. Please try again later.' }); // 500 Internal Server Error
+        var user = new User();
+        user.name = req.body.name;
+        user.username = req.body.username;
+        user.password = req.body.password;
+
+        user.save(function(err){
+            if (err) {
+                if (err.code == 11000)
+                    return res.json({ success: false, message: 'A user with that username already exists.'});
+                else
+                    return res.json(err);
+            }
+            res.json({success: true, msg: 'Successfully created new user.'})
+        });
     }
-  }
 });
 
-
-router.post('/signin', async (req, res) => { // Use async/await
-  try {
-    const user = await User.findOne({ username: req.body.username }).select('name username password');
-
-    if (!user) {
-      return res.status(401).json({ success: false, msg: 'Authentication failed. User not found.' }); // 401 Unauthorized
-    }
-
-    const isMatch = await user.comparePassword(req.body.password); // Use await
-
-    if (isMatch) {
-      const userToken = { id: user._id, username: user.username }; // Use user._id (standard Mongoose)
-      const token = jwt.sign(userToken, process.env.SECRET_KEY, { expiresIn: '1h' }); // Add expiry to the token (e.g., 1 hour)
-      res.json({ success: true, token: 'JWT ' + token });
-    } else {
-      res.status(401).json({ success: false, msg: 'Authentication failed. Incorrect password.' }); // 401 Unauthorized
-    }
-  } catch (err) {
-    console.error(err); // Log the error
-    res.status(500).json({ success: false, message: 'Something went wrong. Please try again later.' }); // 500 Internal Server Error
-  }
+router.all('/signup', (req, res) => {
+    // Returns a message stating that the HTTP method is unsupported.
+    res.status(405).send({ message: 'HTTP method not supported.' });
 });
+
+router.post('/signin', function (req, res) {
+    var userNew = new User();
+    userNew.username = req.body.username;
+    userNew.password = req.body.password;
+
+    User.findOne({ username: userNew.username }).select('name username password').exec(function(err, user) {
+        if (err) {
+            res.send(err);
+        }
+        
+        user.comparePassword(userNew.password, function(isMatch) {
+            if (isMatch) {
+                var userToken = { id: user.id, username: user.username };
+                var token = jwt.sign(userToken, process.env.SECRET_KEY);
+                res.json ({success: true, token: 'JWT ' + token});
+            }
+            else {
+                res.status(401).send({success: false, msg: 'Authentication failed.'});
+            }
+        })
+    })
+});
+
+router.all('/signin', (req, res) => {
+    // Returns a message stating that the HTTP method is unsupported.
+    res.status(405).send({ message: 'HTTP method not supported.' });
+});
+
+router.route('/movies/:title')
+    .get(authJwtController.isAuthenticated, function (req, res) {
+        Movie.findOne({title: req.params.title}, function(err, data) {
+            if (err || data.length == 0) {
+                res.json({status: 400, message: "Movie ''" + req.params.title + "'' couldn't be found."})
+            }
+            else {
+                res.json({status: 200, message: "" + req.params.title + " was found!", movie: data});
+            }
+        })
+    })
+
+    .post(authJwtController.isAuthenticated, (req, res) => {
+        res.json({status: 400, message: "Invalid action."})
+    })
+
+    .put(authJwtController.isAuthenticated,function(req, res) {
+        Movie.findOneAndUpdate(
+            {title: req.params.title}, { 
+                title: req.body.title,
+                releaseDate: req.body.releaseDate,
+                genre: req.body.genre,
+                actors: req.body.actors 
+            },
+            { new: true },
+            function(err, doc) {
+                if (err) {
+                    res.json({ message: "Movie could not be updated." });
+                }
+                else if (!doc) {
+                    res.json({ message: "Movie not found." });
+                }
+                else {
+                    res.json({ status: 200, message: "" + req.body.title + " UPDATED"});
+                }
+            }
+        );
+    })
+
+    .delete(authJwtController.isAuthenticated, function(req, res) {
+        Movie.findOneAndDelete({title: req.params.title}, function(err, data) {
+            if (err || data.length == 0) {
+                res.json(err);
+                res.json({message: "There was an issue trying to find your movie"})
+            }
+            else {
+                res.json({message: "" + req.params.title + " DELETED"});
+            }
+        })
+    })
+    
+    .all((req, res) => {
+        // Any other HTTP Method
+        // Returns a message stating that the HTTP method is unsupported.
+        res.status(405).send({ message: 'HTTP method not supported.' });
+    }
+);
 
 router.route('/movies')
-    .get(authJwtController.isAuthenticated, async (req, res) => {
-        return res.status(500).json({ success: false, message: 'GET request not supported' });
+    .get(authJwtController.isAuthenticated, function (req, res) {
+        Movie.find({}, 'title', function(err, data) {
+            if (err || data.length == 0) {
+                res.json({status: 400, message: "No movies found."})
+            }
+            else {
+                const movieTitles = data.map(movie => movie.title);
+                res.json({status: 200, message: "Movies found!", titles: movieTitles});
+            }
+        })
     })
-    .post(authJwtController.isAuthenticated, async (req, res) => {
-        return res.status(500).json({ success: false, message: 'POST request not supported' });
-    });
+    
+    .post(authJwtController.isAuthenticated, function(req, res) {
+        Movie.findOne({title: req.body.title}, function(err) {
+            if (err) {
+                res.status(400);
+            }
+            else if (req.body.actors.length < 3) {
+                res.json({message: "Not enough actors. (You need at least 3)"});
+            }
+            else {
+                var newMovie = new Movie();
+                newMovie.title = req.body.title;
+                newMovie.releaseDate = req.body.releaseDate;
+                newMovie.genre = req.body.genre;
+                newMovie.actors = req.body.actors;
+                
+                newMovie.save(function (err) {
+                    if (err) {
+                    res.json({message: err});
+                    }
+                    else {
+                        res.json({status: 200, success: true, message: "" + req.body.title + " SAVED"});
+                    }
+                });
+            }
+
+        });
+    })
+
+    .put(authJwtController.isAuthenticated, (req, res) => {
+        res.json({status: 400, message: "Invalid action."})
+    })
+
+    .delete(authJwtController.isAuthenticated, (req, res) => {
+        res.json({status: 400, message: "Invalid action."})
+    })
+
+    .all((req, res) => {
+        // Any other HTTP Method
+        // Returns a message stating that the HTTP method is unsupported.
+        res.status(405).send({ message: 'HTTP method not supported.' });
+    })
 
 app.use('/', router);
 
