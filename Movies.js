@@ -11,7 +11,7 @@ const connectDB = async () => {
   }
 };
 
-//connectDB();
+connectDB();
 
 // Movie schema
 const MovieSchema = new mongoose.Schema({
