@@ -51,21 +51,20 @@ router.post('/signin', async function (req, res) {
         const user = await User.findOne({ username: userNew.username }).select('name username password').exec();
         
         if (!user) {
-            return res.status(401).send({success: false, msg: 'Authentication failed.'});
+            return res.status(401).send({success: false, msg: 'Authentication failed. User cannot be located.'});
         }
 
-        user.comparePassword(userNew.password, function(isMatch) {
-            if (isMatch) {
-                var userToken = { id: user.id, username: user.username };
-                var token = jwt.sign(userToken, process.env.SECRET_KEY);
-                res.json ({success: true, token: 'JWT ' + token});
-            }
-            else {
-                res.status(401).send({success: false, msg: 'Authentication failed.'});
-            }
-        })
+        const isMatch = await user.comparePassword(userNew.password);
+
+        if (isMatch) {
+            var userToken = { id: user.id, username: user.username };
+            var token = jwt.sign(userToken, process.env.SECRET_KEY); 
+            res.json({success: true, token: 'JWT ' + token});
+        } else {
+            res.status(401).send({success: false, msg: 'Authentication failed. Wrong password.'});
+        }
     } catch (err) {
-        res.send(err);
+        res.status(500).send({success: false, msg: err.message || 'An error occurred'});
     }
 });
 
